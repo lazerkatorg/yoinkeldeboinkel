@@ -27,53 +27,87 @@ jobs:
         # Wait for OpenSSH to be ready
         Start-Sleep -Seconds 10
         
-        # Test SSH availability
-        $sshPath = Get-Command ssh -ErrorAction SilentlyContinue
-        if (-not $sshPath) {
-          Write-Host "SSH not found, installing manually..."
-          Add-WindowsCapability -Online -Name OpenSSH.Client~~~~0.0.1.0
-          Start-Sleep -Seconds 10
-        }
-        
         Write-Host "Starting Pinggy tunnel..."
         
-        # Create tunnel and capture output directly
-        $process = Start-Process -FilePath "ssh" -ArgumentList "-o StrictHostKeyChecking=no", "-p", "443", "-R0:127.0.0.1:3389", "qr+tcp@free.pinggy.io" -NoNewWindow -PassThru -RedirectStandardOutput "tunnel_output.txt" -RedirectStandardError "tunnel_error.txt"
+        # Use ssh with -t flag and proper arguments
+        $arguments = @(
+          "-t",  # Force pseudo-terminal allocation
+          "-o", "StrictHostKeyChecking=no",
+          "-p", "443",
+          "-R", "0:127.0.0.1:3389",
+          "qr+tcp@free.pinggy.io"
+        )
         
-        # Read output file
+        # Create process with redirected output
+        $psi = New-Object System.Diagnostics.ProcessStartInfo
+        $psi.FileName = "ssh"
+        $psi.Arguments = $arguments
+        $psi.UseShellExecute = $false
+        $psi.RedirectStandardOutput = $true
+        $psi.RedirectStandardError = $true
+        $psi.CreateNoWindow = $true
+        
+        $process = [System.Diagnostics.Process]::Start($psi)
+        
+        # Read output asynchronously
+        $outputBuffer = New-Object System.Collections.ArrayList
+        $errorBuffer = New-Object System.Collections.ArrayList
+        
         $timeout = 120
         $found = $false
+        $startTime = Get-Date
         
-        for ($i = 0; $i -lt $timeout; $i++) {
-          if (Test-Path "tunnel_output.txt") {
-            $output = Get-Content "tunnel_output.txt" -Raw
-            if ($output -match "tcp://([a-z0-9]+\.pinggy\.io):(\d+)") {
-              Write-Host "========================================="
-              Write-Host "✅ RDP READY - CONNECT TO: $($Matches[0])"
-              Write-Host "Username: runneradmin"
-              Write-Host "Password: Password123!"
-              Write-Host "========================================="
-              $found = $true
-              break
+        while ((Get-Date) - $startTime -lt [TimeSpan]::FromSeconds($timeout)) {
+          # Read stdout
+          while (-not $process.StandardOutput.EndOfStream) {
+            $line = $process.StandardOutput.ReadLine()
+            if ($line) {
+              $outputBuffer.Add($line) | Out-Null
+              Write-Host "OUT: $line"
+              
+              if ($line -match "tcp://([a-z0-9]+\.pinggy\.io):(\d+)") {
+                Write-Host "========================================="
+                Write-Host "✅ RDP READY - CONNECT TO: $($Matches[0])"
+                Write-Host "Username: runneradmin"
+                Write-Host "Password: Password123!"
+                Write-Host "========================================="
+                $found = $true
+                break
+              }
             }
           }
           
-          if (Test-Path "tunnel_error.txt") {
-            $errorOutput = Get-Content "tunnel_error.txt" -Raw
-            if ($errorOutput) {
-              Write-Host "Tunnel error: $errorOutput"
+          # Read stderr
+          while (-not $process.StandardError.EndOfStream) {
+            $line = $process.StandardError.ReadLine()
+            if ($line) {
+              $errorBuffer.Add($line) | Out-Null
+              Write-Host "ERR: $line"
+              
+              # Also check stderr for the address
+              if ($line -match "tcp://([a-z0-9]+\.pinggy\.io):(\d+)") {
+                Write-Host "========================================="
+                Write-Host "✅ RDP READY - CONNECT TO: $($Matches[0])"
+                Write-Host "Username: runneradmin"
+                Write-Host "Password: Password123!"
+                Write-Host "========================================="
+                $found = $true
+                break
+              }
             }
           }
           
-          Write-Host "Waiting for tunnel address... ($i seconds)"
-          Start-Sleep -Seconds 1
+          if ($found) { break }
+          
+          Start-Sleep -Milliseconds 500
         }
         
         if (-not $found) {
-          Write-Host "Failed to get tunnel address. Check connectivity."
-          Write-Host "SSH version:"
-          ssh -V
+          Write-Host "Failed to get tunnel address after $timeout seconds"
+          Write-Host "Full output captured:"
+          $outputBuffer -join "`n"
+          $errorBuffer -join "`n"
         }
         
-        # Keep process running
+        # Keep the process running
         $process.WaitForExit()
