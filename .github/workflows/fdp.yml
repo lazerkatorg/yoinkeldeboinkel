@@ -5,25 +5,54 @@ on: [push, workflow_dispatch]
 jobs:
   build:
     runs-on: windows-latest
-    timeout-minutes: 9999  # Keeps the runner alive for up to ~6.9 days
+    timeout-minutes: 9999
 
     steps:
-    - name: Download cloudflared
-      run: |
-        Invoke-WebRequest https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe -OutFile cloudflared.exe
-    
-    - name: Create Cloudflare tunnel
-      run: |
-        .\cloudflared.exe tunnel --url rdp://localhost:3389 --protocol rdp
-    
     - name: Enable Remote Desktop
       run: |
         Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -Value 0
         Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
-        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "UserAuthentication" -Value 1
+        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "UserAuthentication" -Value 0
+        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "SecurityLayer" -Value 0
     
     - name: Set Password
-      run: Set-LocalUser -Name "runneradmin" -Password (ConvertTo-SecureString -AsPlainText "YourPassword123!" -Force)
+      run: Set-LocalUser -Name "runneradmin" -Password (ConvertTo-SecureString -AsPlainText "Password123!" -Force)
     
-    - name: Create ngrok tunnel
-      run: .\ngrok\ngrok.exe tcp 3389
+    - name: Install Chocolatey
+      run: |
+        Set-ExecutionPolicy Bypass -Scope Process -Force
+        [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
+        iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
+    
+    - name: Install and Run WebSocket RDP Gateway
+      run: |
+        # Install a simple websocket-to-tcp bridge
+        choco install nodejs -y
+        refreshenv
+        npm install -g ws-tcp-relay
+        
+        # Create a simple relay script
+        @"
+        const WebSocket = require('ws');
+        const net = require('net');
+        
+        const wss = new WebSocket.Server({ port: 8080 });
+        
+        wss.on('connection', (ws) => {
+            const client = net.createConnection(3389, 'localhost');
+            
+            ws.on('message', (data) => client.write(data));
+            ws.on('close', () => client.destroy());
+            client.on('data', (data) => ws.send(data));
+            client.on('error', () => ws.close());
+        });
+        
+        console.log('WebSocket RDP relay running on port 8080');
+        "@ | Out-File -FilePath relay.js -Encoding UTF8
+        
+        Start-Process node -ArgumentList "relay.js" -NoNewWindow
+        
+    - name: Download and Run Cloudflared
+      run: |
+        Invoke-WebRequest https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe -OutFile cloudflared.exe
+        .\cloudflared.exe tunnel --url http://localhost:8080
