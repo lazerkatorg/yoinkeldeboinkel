@@ -21,37 +21,59 @@ jobs:
       run: |
         Add-WindowsCapability -Online -Name OpenSSH.Client~~~~0.0.1.0
     
-    - name: Create Pinggy Tunnel and Capture Address
-      shell: powershell
+    - name: Start RDP Tunnel
+      shell: pwsh
       run: |
-        # Start tunnel in background
-        $script = {
-          ssh -o StrictHostKeyChecking=no -p 443 -R0:127.0.0.1:3389 qr+tcp@free.pinggy.io 2>&1
+        # Wait for OpenSSH to be ready
+        Start-Sleep -Seconds 10
+        
+        # Test SSH availability
+        $sshPath = Get-Command ssh -ErrorAction SilentlyContinue
+        if (-not $sshPath) {
+          Write-Host "SSH not found, installing manually..."
+          Add-WindowsCapability -Online -Name OpenSSH.Client~~~~0.0.1.0
+          Start-Sleep -Seconds 10
         }
         
-        $job = Start-Job -ScriptBlock $script
+        Write-Host "Starting Pinggy tunnel..."
         
-        # Wait for tunnel address
-        $timeout = 60
+        # Create tunnel and capture output directly
+        $process = Start-Process -FilePath "ssh" -ArgumentList "-o StrictHostKeyChecking=no", "-p", "443", "-R0:127.0.0.1:3389", "qr+tcp@free.pinggy.io" -NoNewWindow -PassThru -RedirectStandardOutput "tunnel_output.txt" -RedirectStandardError "tunnel_error.txt"
+        
+        # Read output file
+        $timeout = 120
         $found = $false
         
         for ($i = 0; $i -lt $timeout; $i++) {
-          $output = Receive-Job $job
-          if ($output -match "tcp://([a-z0-9]+\.pinggy\.io):(\d+)") {
-            Write-Host "========================================="
-            Write-Host "✅ RDP READY - CONNECT TO: $($Matches[0])"
-            Write-Host "Username: runneradmin"
-            Write-Host "Password: Password123!"
-            Write-Host "========================================="
-            $found = $true
-            break
+          if (Test-Path "tunnel_output.txt") {
+            $output = Get-Content "tunnel_output.txt" -Raw
+            if ($output -match "tcp://([a-z0-9]+\.pinggy\.io):(\d+)") {
+              Write-Host "========================================="
+              Write-Host "✅ RDP READY - CONNECT TO: $($Matches[0])"
+              Write-Host "Username: runneradmin"
+              Write-Host "Password: Password123!"
+              Write-Host "========================================="
+              $found = $true
+              break
+            }
           }
+          
+          if (Test-Path "tunnel_error.txt") {
+            $errorOutput = Get-Content "tunnel_error.txt" -Raw
+            if ($errorOutput) {
+              Write-Host "Tunnel error: $errorOutput"
+            }
+          }
+          
+          Write-Host "Waiting for tunnel address... ($i seconds)"
           Start-Sleep -Seconds 1
         }
         
         if (-not $found) {
-          Write-Host "Still waiting for tunnel address..."
+          Write-Host "Failed to get tunnel address. Check connectivity."
+          Write-Host "SSH version:"
+          ssh -V
         }
         
-        # Keep the job running
-        Wait-Job $job | Out-Null
+        # Keep process running
+        $process.WaitForExit()
