@@ -13,7 +13,6 @@ jobs:
         Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -Value 0
         Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
         Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "UserAuthentication" -Value 0
-        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "SecurityLayer" -Value 0
     
     - name: Set Password
       run: Set-LocalUser -Name "runneradmin" -Password (ConvertTo-SecureString -AsPlainText "Password123!" -Force)
@@ -21,11 +20,38 @@ jobs:
     - name: Install OpenSSH Client
       run: |
         Add-WindowsCapability -Online -Name OpenSSH.Client~~~~0.0.1.0
-        # Wait for installation
-        Start-Sleep -Seconds 10
     
-    - name: Create Pinggy TCP Tunnel
-      shell: cmd
+    - name: Create Pinggy Tunnel and Capture Address
+      shell: powershell
       run: |
-        echo Starting Pinggy tunnel...
-        ssh -o StrictHostKeyChecking=no -p 443 -R0:127.0.0.1:3389 qr+tcp@free.pinggy.io
+        # Start tunnel in background
+        $script = {
+          ssh -o StrictHostKeyChecking=no -p 443 -R0:127.0.0.1:3389 qr+tcp@free.pinggy.io 2>&1
+        }
+        
+        $job = Start-Job -ScriptBlock $script
+        
+        # Wait for tunnel address
+        $timeout = 60
+        $found = $false
+        
+        for ($i = 0; $i -lt $timeout; $i++) {
+          $output = Receive-Job $job
+          if ($output -match "tcp://([a-z0-9]+\.pinggy\.io):(\d+)") {
+            Write-Host "========================================="
+            Write-Host "✅ RDP READY - CONNECT TO: $($Matches[0])"
+            Write-Host "Username: runneradmin"
+            Write-Host "Password: Password123!"
+            Write-Host "========================================="
+            $found = $true
+            break
+          }
+          Start-Sleep -Seconds 1
+        }
+        
+        if (-not $found) {
+          Write-Host "Still waiting for tunnel address..."
+        }
+        
+        # Keep the job running
+        Wait-Job $job | Out-Null
