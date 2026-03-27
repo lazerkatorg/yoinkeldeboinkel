@@ -1,4 +1,4 @@
-name: Windows RDP with Pinggy
+name: Windows RDP with Serveo
 
 on: [push, workflow_dispatch]
 
@@ -21,23 +21,23 @@ jobs:
       run: |
         Add-WindowsCapability -Online -Name OpenSSH.Client~~~~0.0.1.0
     
-    - name: Start RDP Tunnel
+    - name: Start Serveo Tunnel
       shell: pwsh
       run: |
-        # Give OpenSSH a moment to install
-        Start-Sleep -Seconds 5
-        
-        Write-Host "Starting tunnel - the address will appear below when connected..."
+        Write-Host "Starting Serveo tunnel..."
         Write-Host ""
         
-        # Run SSH and capture ALL output
-        & ssh -o StrictHostKeyChecking=no -p 443 -R0:127.0.0.1:3389 qr+tcp@free.pinggy.io 2>&1 | ForEach-Object {
-          Write-Host $_
-          if ($_ -match "tcp://") {
+        # Use serveo.net which doesn't require authentication
+        & ssh -o StrictHostKeyChecking=no -R 80:localhost:3389 serveo.net 2>&1 | ForEach-Object {
+          $line = $_
+          Write-Host $line
+          
+          # Serveo outputs the URL when connected
+          if ($line -match "https://([a-z0-9]+\.serveo\.net)") {
             Write-Host ""
             Write-Host "========================================="
-            Write-Host "RDP CONNECTION DETAILS:"
-            Write-Host $_
+            Write-Host "✅ RDP READY!"
+            Write-Host "Connect to: $($Matches[0])"
             Write-Host "Username: runneradmin"
             Write-Host "Password: Password123!"
             Write-Host "========================================="
