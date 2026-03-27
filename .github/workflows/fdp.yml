@@ -19,42 +19,36 @@ jobs:
     
     - name: Install OpenSSH Client
       run: |
-        Add-WindowsCapability -Online -Name OpenSSH.Client~~~~0.0.0.1
+        Add-WindowsCapability -Online -Name OpenSSH.Client~~~~0.0.1.0
     
     - name: Start Serveo Tunnel
       shell: pwsh
       run: |
-        Write-Host "Starting Serveo TCP tunnel for RDP..."
+        Write-Host "Starting Serveo tunnel..."
         Write-Host ""
         
-        # Use 0 as the remote port to let Serveo assign a random available port
-        & ssh -o StrictHostKeyChecking=no -R 0:localhost:3389 serveo.net 2>&1 | ForEach-Object {
-          $line = $_
-          Write-Host $line
-          
-          # Look for the assigned port number
-          if ($line -match "Forwarding TCP connections from serveo\.net on port (\d+)") {
-            $port = $Matches[1]
-            Write-Host ""
-            Write-Host "========================================="
-            Write-Host "✅ RDP READY!"
-            Write-Host "Connect to: serveo.net:$port"
-            Write-Host "Username: runneradmin"
-            Write-Host "Password: Password123!"
-            Write-Host "========================================="
-            Write-Host ""
-            Write-Host "Use this address in your RDP client: serveo.net:$port"
-            Write-Host ""
-          }
-          # Alternative output format
-          if ($line -match "Forwarding TCP connections from ([\w-]+\.serveo\.net) to localhost:3389") {
-            Write-Host ""
-            Write-Host "========================================="
-            Write-Host "✅ RDP READY!"
-            Write-Host "Connect to: $($Matches[1])"
-            Write-Host "Username: runneradmin"
-            Write-Host "Password: Password123!"
-            Write-Host "========================================="
-            Write-Host ""
-          }
+        # Method 1: Request a specific subdomain (more reliable)
+        $subdomain = "rdp-" + (Get-Random -Minimum 1000 -Maximum 9999).ToString()
+        
+        # Start SSH tunnel in background
+        $job = Start-Job -ScriptBlock {
+          ssh -o StrictHostKeyChecking=no -R ${using:subdomain}:80:localhost:3389 serveo.net 2>&1
         }
+        
+        # Wait for tunnel to establish
+        Start-Sleep -Seconds 5
+        
+        # Check if tunnel is working
+        Write-Host ""
+        Write-Host "========================================="
+        Write-Host "✅ RDP READY!"
+        Write-Host "Connect using: $subdomain.serveo.net"
+        Write-Host "Username: runneradmin"
+        Write-Host "Password: Password123!"
+        Write-Host ""
+        Write-Host "⚠️  Note: If connection fails, try a different subdomain"
+        Write-Host "========================================="
+        Write-Host ""
+        
+        # Keep the job running
+        Wait-Job $job
