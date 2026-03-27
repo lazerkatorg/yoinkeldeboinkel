@@ -27,22 +27,23 @@ jobs:
         Write-Host "Starting Serveo TCP tunnel for RDP..."
         Write-Host ""
         
-        # Let Serveo assign a random port instead of specifying 3389
-        & ssh -o StrictHostKeyChecking=no -R 3389:localhost:3389 serveo.net 2>&1 | ForEach-Object {
+        # Use 0 as the remote port to let Serveo assign a random available port
+        & ssh -o StrictHostKeyChecking=no -R 0:localhost:3389 serveo.net 2>&1 | ForEach-Object {
           $line = $_
           Write-Host $line
           
-          # Look for the port assignment message
+          # Look for the assigned port number
           if ($line -match "Forwarding TCP connections from serveo\.net on port (\d+)") {
+            $port = $Matches[1]
             Write-Host ""
             Write-Host "========================================="
             Write-Host "✅ RDP READY!"
-            Write-Host "Connect to: serveo.net:$($Matches[1])"
+            Write-Host "Connect to: serveo.net:$port"
             Write-Host "Username: runneradmin"
             Write-Host "Password: Password123!"
             Write-Host "========================================="
             Write-Host ""
-            Write-Host "In your RDP client, use: serveo.net:$($Matches[1])"
+            Write-Host "Use this address in your RDP client: serveo.net:$port"
             Write-Host ""
           }
           # Alternative output format
