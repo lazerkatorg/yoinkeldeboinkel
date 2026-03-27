@@ -24,20 +24,34 @@ jobs:
     - name: Start Serveo Tunnel
       shell: pwsh
       run: |
-        Write-Host "Starting Serveo tunnel..."
+        Write-Host "Starting Serveo TCP tunnel for RDP..."
         Write-Host ""
         
-        # Use serveo.net which doesn't require authentication
-        & ssh -o StrictHostKeyChecking=no -R 80:localhost:3389 serveo.net 2>&1 | ForEach-Object {
+        # Use TCP forwarding (not HTTP) - the -R flag with port:host:port format
+        # Format: -R <remote_port>:<local_host>:<local_port>
+        # Using 0.0.0.0 as local host to bind to all interfaces
+        & ssh -o StrictHostKeyChecking=no -R 0.0.0.0:3389:localhost:3389 serveo.net 2>&1 | ForEach-Object {
           $line = $_
           Write-Host $line
           
-          # Serveo outputs the URL when connected
-          if ($line -match "https://([a-z0-9]+\.serveo\.net)") {
+          # Serveo outputs the TCP forwarding URL when connected
+          if ($line -match "Forwarding TCP connections from serveo\.net on port (\d+)") {
             Write-Host ""
             Write-Host "========================================="
             Write-Host "✅ RDP READY!"
-            Write-Host "Connect to: $($Matches[0])"
+            Write-Host "Connect to: serveo.net:$($Matches[1])"
+            Write-Host "Or use your assigned subdomain: [random].serveo.net:$($Matches[1])"
+            Write-Host "Username: runneradmin"
+            Write-Host "Password: Password123!"
+            Write-Host "========================================="
+            Write-Host ""
+          }
+          # Alternative pattern that might appear
+          if ($line -match "Forwarding TCP connections from ([\w-]+\.serveo\.net) to localhost:3389") {
+            Write-Host ""
+            Write-Host "========================================="
+            Write-Host "✅ RDP READY!"
+            Write-Host "Connect to: $($Matches[1])"
             Write-Host "Username: runneradmin"
             Write-Host "Password: Password123!"
             Write-Host "========================================="
