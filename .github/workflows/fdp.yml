@@ -27,70 +27,64 @@ jobs:
         # Wait for OpenSSH to be ready
         Start-Sleep -Seconds 10
         
-        Write-Host "Starting Pinggy tunnel..."
+        Write-Host "Starting Pinggy tunnel for RDP (port 3389)..."
         
-        # Use ssh with -t flag and proper arguments
-        $arguments = @(
-          "-t",  # Force pseudo-terminal allocation
-          "-o", "StrictHostKeyChecking=no",
-          "-p", "443",
-          "-R", "0:127.0.0.1:3389",
-          "qr+tcp@free.pinggy.io"
-        )
+        # Start the tunnel process
+        $pinfo = New-Object System.Diagnostics.ProcessStartInfo
+        $pinfo.FileName = "ssh"
+        $pinfo.Arguments = "-o StrictHostKeyChecking=no -p 443 -R0:127.0.0.1:3389 qr+tcp@free.pinggy.io"
+        $pinfo.UseShellExecute = $false
+        $pinfo.RedirectStandardOutput = $true
+        $pinfo.RedirectStandardError = $true
+        $pinfo.CreateNoWindow = $true
         
-        # Create process with redirected output
-        $psi = New-Object System.Diagnostics.ProcessStartInfo
-        $psi.FileName = "ssh"
-        $psi.Arguments = $arguments
-        $psi.UseShellExecute = $false
-        $psi.RedirectStandardOutput = $true
-        $psi.RedirectStandardError = $true
-        $psi.CreateNoWindow = $true
+        $process = New-Object System.Diagnostics.Process
+        $process.StartInfo = $pinfo
+        $process.Start() | Out-Null
         
-        $process = [System.Diagnostics.Process]::Start($psi)
-        
-        # Read output asynchronously
-        $outputBuffer = New-Object System.Collections.ArrayList
-        $errorBuffer = New-Object System.Collections.ArrayList
-        
-        $timeout = 120
+        # Read output
+        $timeout = 60
         $found = $false
-        $startTime = Get-Date
         
-        while ((Get-Date) - $startTime -lt [TimeSpan]::FromSeconds($timeout)) {
-          # Read stdout
-          while (-not $process.StandardOutput.EndOfStream) {
-            $line = $process.StandardOutput.ReadLine()
+        for ($i = 0; $i -lt $timeout; $i++) {
+          # Read stderr (Pinggy outputs to stderr)
+          while (-not $process.StandardError.EndOfStream) {
+            $line = $process.StandardError.ReadLine()
             if ($line) {
-              $outputBuffer.Add($line) | Out-Null
-              Write-Host "OUT: $line"
+              Write-Host $line
               
-              if ($line -match "tcp://([a-z0-9]+\.pinggy\.io):(\d+)") {
+              # Look for the tunnel URL
+              if ($line -match "tcp://([a-z0-9-]+\.a\.free\.pinggy\.link):(\d+)") {
+                $tunnelUrl = $Matches[0]
+                Write-Host ""
                 Write-Host "========================================="
-                Write-Host "✅ RDP READY - CONNECT TO: $($Matches[0])"
+                Write-Host "✅ RDP READY!"
+                Write-Host "Connect to: $tunnelUrl"
                 Write-Host "Username: runneradmin"
                 Write-Host "Password: Password123!"
                 Write-Host "========================================="
+                Write-Host ""
                 $found = $true
                 break
               }
             }
           }
           
-          # Read stderr
-          while (-not $process.StandardError.EndOfStream) {
-            $line = $process.StandardError.ReadLine()
+          # Also check stdout just in case
+          while (-not $process.StandardOutput.EndOfStream) {
+            $line = $process.StandardOutput.ReadLine()
             if ($line) {
-              $errorBuffer.Add($line) | Out-Null
-              Write-Host "ERR: $line"
-              
-              # Also check stderr for the address
-              if ($line -match "tcp://([a-z0-9]+\.pinggy\.io):(\d+)") {
+              Write-Host $line
+              if ($line -match "tcp://([a-z0-9-]+\.a\.free\.pinggy\.link):(\d+)") {
+                $tunnelUrl = $Matches[0]
+                Write-Host ""
                 Write-Host "========================================="
-                Write-Host "✅ RDP READY - CONNECT TO: $($Matches[0])"
+                Write-Host "✅ RDP READY!"
+                Write-Host "Connect to: $tunnelUrl"
                 Write-Host "Username: runneradmin"
                 Write-Host "Password: Password123!"
                 Write-Host "========================================="
+                Write-Host ""
                 $found = $true
                 break
               }
@@ -99,15 +93,14 @@ jobs:
           
           if ($found) { break }
           
-          Start-Sleep -Milliseconds 500
+          Start-Sleep -Seconds 1
         }
         
         if (-not $found) {
-          Write-Host "Failed to get tunnel address after $timeout seconds"
-          Write-Host "Full output captured:"
-          $outputBuffer -join "`n"
-          $errorBuffer -join "`n"
+          Write-Host "Tunnel started but address not captured within $timeout seconds"
+          Write-Host "The tunnel is still running - check the output above for the address"
         }
         
-        # Keep the process running
+        # Keep the tunnel alive
+        Write-Host "RDP tunnel is running. Press Ctrl+C to stop..."
         $process.WaitForExit()
