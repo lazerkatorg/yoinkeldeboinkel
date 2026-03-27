@@ -1,48 +1,27 @@
-name: Windows RDP with Serveo TCP Tunnel
+name: Window 10
 
 on: [push, workflow_dispatch]
 
 jobs:
   build:
+
     runs-on: windows-latest
     timeout-minutes: 9999
 
+
     steps:
-    - name: Enable Remote Desktop
-      run: |
-        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -Value 0
-        Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
-        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "UserAuthentication" -Value 0
-    
-    - name: Set Password
-      run: Set-LocalUser -Name "runneradmin" -Password (ConvertTo-SecureString -AsPlainText "Password123!" -Force)
-    
-    - name: Install OpenSSH Client
-      run: |
-        Add-WindowsCapability -Online -Name OpenSSH.Client~~~~0.0.1.0
-    
-    - name: Start Serveo TCP Tunnel
-      shell: pwsh
-      run: |
-        Write-Host "Starting Serveo TCP tunnel for RDP..."
-        Write-Host ""
-        
-        # Correct TCP tunnel syntax: -R remote_port:localhost:local_port
-        # Using 0 asks Serveo to assign a random remote port
-        ssh -o StrictHostKeyChecking=no -R 0:localhost:3389 serveo.net 2>&1 | ForEach-Object {
-          $line = $_
-          Write-Host $line
-          
-          # Parse the assigned remote port from Serveo response
-          if ($line -match "Forwarding TCP connection from \[::\]:(\d+)") {
-            $port = $Matches[1]
-            Write-Host ""
-            Write-Host "========================================="
-            Write-Host "✅ RDP READY!"
-            Write-Host "Connect to: serveo.net:$port"
-            Write-Host "Username: runneradmin"
-            Write-Host "Password: Password123!"
-            Write-Host "========================================="
-            Write-Host ""
-          }
-        }
+    - name: Download
+      run: Invoke-WebRequest https://bin.equinox.io/c/4VmDzA7iaHb/ngrok-stable-windows-amd64.zip -OutFile ngrok.zip
+    - name: Extract
+      run: Expand-Archive ngrok.zip
+    - name: Auth
+      run: .\ngrok\ngrok.exe authtoken $Env:NGROK_AUTH_TOKEN
+      env:
+        NGROK_AUTH_TOKEN: ${{ secrets.NGROK_AUTH_TOKEN }}
+    - name: Enable TS
+      run: Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server'-name "fDenyTSConnections" -Value 0
+    - run: Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+    - run: Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "UserAuthentication" -Value 1
+    - run: Set-LocalUser -Name "runneradmin" -Password (ConvertTo-SecureString -AsPlainText "@cyb3rking" -Force)
+    - name: Create Tunnel
+      run: .\ngrok\ngrok.exe tcp 3389
