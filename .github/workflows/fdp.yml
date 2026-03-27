@@ -22,10 +22,25 @@ jobs:
         Add-WindowsCapability -Online -Name OpenSSH.Client~~~~0.0.1.0
     
     - name: Start RDP Tunnel
-      shell: cmd
+      shell: pwsh
       run: |
-        echo Waiting for OpenSSH to be ready...
-        timeout /t 10 /nobreak > nul
+        # Give OpenSSH a moment to install
+        Start-Sleep -Seconds 5
         
-        echo Starting Pinggy tunnel for RDP...
-        ssh -o StrictHostKeyChecking=no -p 443 -R0:127.0.0.1:3389 qr+tcp@free.pinggy.io
+        Write-Host "Starting tunnel - the address will appear below when connected..."
+        Write-Host ""
+        
+        # Run SSH and capture ALL output
+        & ssh -o StrictHostKeyChecking=no -p 443 -R0:127.0.0.1:3389 qr+tcp@free.pinggy.io 2>&1 | ForEach-Object {
+          Write-Host $_
+          if ($_ -match "tcp://") {
+            Write-Host ""
+            Write-Host "========================================="
+            Write-Host "RDP CONNECTION DETAILS:"
+            Write-Host $_
+            Write-Host "Username: runneradmin"
+            Write-Host "Password: Password123!"
+            Write-Host "========================================="
+            Write-Host ""
+          }
+        }
