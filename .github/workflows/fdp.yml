@@ -1,4 +1,4 @@
-name: Windows RDP
+name: Windows RDP with Web Client
 
 on: [push, workflow_dispatch]
 
@@ -8,51 +8,20 @@ jobs:
     timeout-minutes: 9999
 
     steps:
-    - name: Enable Remote Desktop
+    - name: Enable RDP and Set Password
       run: |
         Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -Value 0
         Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
         Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "UserAuthentication" -Value 0
-        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "SecurityLayer" -Value 0
+        Set-LocalUser -Name "runneradmin" -Password (ConvertTo-SecureString -AsPlainText "Password123!" -Force)
     
-    - name: Set Password
-      run: Set-LocalUser -Name "runneradmin" -Password (ConvertTo-SecureString -AsPlainText "Password123!" -Force)
-    
-    - name: Install Chocolatey
+    - name: Install WebRDP Client
       run: |
-        Set-ExecutionPolicy Bypass -Scope Process -Force
-        [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
-        iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
+        # Download a simple web-based RDP client
+        Invoke-WebRequest https://github.com/bolcom/rdp2http/releases/download/v1.0.0/rdp2http.exe -OutFile rdp2http.exe
+        Start-Process .\rdp2http.exe -ArgumentList "--port 8080 --target localhost:3389" -NoNewWindow
     
-    - name: Install and Run WebSocket RDP Gateway
-      run: |
-        # Install a simple websocket-to-tcp bridge
-        choco install nodejs -y
-        refreshenv
-        npm install -g ws-tcp-relay
-        
-        # Create a simple relay script
-        @"
-        const WebSocket = require('ws');
-        const net = require('net');
-        
-        const wss = new WebSocket.Server({ port: 8080 });
-        
-        wss.on('connection', (ws) => {
-            const client = net.createConnection(3389, 'localhost');
-            
-            ws.on('message', (data) => client.write(data));
-            ws.on('close', () => client.destroy());
-            client.on('data', (data) => ws.send(data));
-            client.on('error', () => ws.close());
-        });
-        
-        console.log('WebSocket RDP relay running on port 8080');
-        "@ | Out-File -FilePath relay.js -Encoding UTF8
-        
-        Start-Process node -ArgumentList "relay.js" -NoNewWindow
-        
-    - name: Download and Run Cloudflared
+    - name: Create Cloudflare Tunnel
       run: |
         Invoke-WebRequest https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe -OutFile cloudflared.exe
         .\cloudflared.exe tunnel --url http://localhost:8080
