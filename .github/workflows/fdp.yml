@@ -1,4 +1,4 @@
-name: Windows RDP with Serveo
+name: Windows RDP with Serveo TCP Tunnel
 
 on: [push, workflow_dispatch]
 
@@ -27,26 +27,14 @@ jobs:
         Write-Host "Starting Serveo TCP tunnel for RDP..."
         Write-Host ""
         
-        # Correct TCP tunnel syntax for RDP
+        # Correct TCP tunnel syntax: -R remote_port:localhost:local_port
+        # Using 0 asks Serveo to assign a random remote port
         ssh -o StrictHostKeyChecking=no -R 0:localhost:3389 serveo.net 2>&1 | ForEach-Object {
           $line = $_
           Write-Host $line
           
-          # Parse the random port from Serveo response
+          # Parse the assigned remote port from Serveo response
           if ($line -match "Forwarding TCP connection from \[::\]:(\d+)") {
-            $port = $Matches[1]
-            Write-Host ""
-            Write-Host "========================================="
-            Write-Host "✅ RDP READY!"
-            Write-Host "Connect to: serveo.net:$port"
-            Write-Host "Username: runneradmin"
-            Write-Host "Password: Password123!"
-            Write-Host "========================================="
-            Write-Host ""
-          }
-          
-          # Alternative response format
-          if ($line -match "Forwarding TCP connection from .*:(\d+)") {
             $port = $Matches[1]
             Write-Host ""
             Write-Host "========================================="
