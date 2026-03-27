@@ -1,4 +1,4 @@
-name: Windows RDP with Web Client
+name: Windows RDP with Pinggy
 
 on: [push, workflow_dispatch]
 
@@ -8,20 +8,24 @@ jobs:
     timeout-minutes: 9999
 
     steps:
-    - name: Enable RDP and Set Password
+    - name: Enable Remote Desktop
       run: |
         Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -Value 0
         Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
         Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "UserAuthentication" -Value 0
-        Set-LocalUser -Name "runneradmin" -Password (ConvertTo-SecureString -AsPlainText "Password123!" -Force)
+        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "SecurityLayer" -Value 0
     
-    - name: Install WebRDP Client
-      run: |
-        # Download a simple web-based RDP client
-        Invoke-WebRequest https://github.com/bolcom/rdp2http/releases/download/v1.0.0/rdp2http.exe -OutFile rdp2http.exe
-        Start-Process .\rdp2http.exe -ArgumentList "--port 8080 --target localhost:3389" -NoNewWindow
+    - name: Set Password
+      run: Set-LocalUser -Name "runneradmin" -Password (ConvertTo-SecureString -AsPlainText "Password123!" -Force)
     
-    - name: Create Cloudflare Tunnel
+    - name: Install OpenSSH Client
       run: |
-        Invoke-WebRequest https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe -OutFile cloudflared.exe
-        .\cloudflared.exe tunnel --url http://localhost:8080
+        Add-WindowsCapability -Online -Name OpenSSH.Client~~~~0.0.1.0
+        # Wait for installation
+        Start-Sleep -Seconds 10
+    
+    - name: Create Pinggy TCP Tunnel
+      shell: cmd
+      run: |
+        echo Starting Pinggy tunnel...
+        ssh -o StrictHostKeyChecking=no -p 443 -R0:127.0.0.1:3389 qr+tcp@free.pinggy.io
