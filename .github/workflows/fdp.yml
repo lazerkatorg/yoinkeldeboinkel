@@ -1,4 +1,4 @@
-name: Windows RDP with ngrok
+name: Windows RDP with Serveo
 
 on: [push, workflow_dispatch]
 
@@ -17,43 +17,44 @@ jobs:
     - name: Set Password
       run: Set-LocalUser -Name "runneradmin" -Password (ConvertTo-SecureString -AsPlainText "Password123!" -Force)
     
-    - name: Setup ngrok
+    - name: Install OpenSSH Client
       run: |
-        Invoke-WebRequest -Uri "https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-windows-amd64.zip" -OutFile "ngrok.zip"
-        Expand-Archive -Path "ngrok.zip" -DestinationPath "."
-        # You need to sign up at ngrok.com and add your token
-        # Add your token as a GitHub secret: NGROK_AUTH_TOKEN
-        .\ngrok config add-authtoken ${{ secrets.NGROK_AUTH_TOKEN }}
+        Add-WindowsCapability -Online -Name OpenSSH.Client~~~~0.0.1.0
     
-    - name: Start ngrok TCP Tunnel
+    - name: Start Serveo TCP Tunnel
       shell: pwsh
       run: |
-        Write-Host "Starting ngrok TCP tunnel..."
+        Write-Host "Starting Serveo TCP tunnel for RDP..."
+        Write-Host ""
         
-        # Start ngrok in background
-        $ngrok = Start-Process -FilePath ".\ngrok.exe" -ArgumentList "tcp 3389" -NoNewWindow -PassThru
-        
-        Start-Sleep -Seconds 5
-        
-        # Get tunnel info from API
-        try {
-          $tunnels = Invoke-RestMethod -Uri "http://localhost:4040/api/tunnels"
-          $tcpTunnel = $tunnels.tunnels | Where-Object { $_.proto -eq "tcp" }
+        # Correct TCP tunnel syntax for RDP
+        ssh -o StrictHostKeyChecking=no -R 0:localhost:3389 serveo.net 2>&1 | ForEach-Object {
+          $line = $_
+          Write-Host $line
           
-          Write-Host ""
-          Write-Host "========================================="
-          Write-Host "✅ RDP READY!"
-          Write-Host "Connect to: $($tcpTunnel.public_url)"
-          Write-Host "Username: runneradmin"
-          Write-Host "Password: Password123!"
-          Write-Host ""
-          Write-Host "Connect using any RDP client (Windows Remote Desktop, FreeRDP, etc.)"
-          Write-Host "========================================="
-          Write-Host ""
+          # Parse the random port from Serveo response
+          if ($line -match "Forwarding TCP connection from \[::\]:(\d+)") {
+            $port = $Matches[1]
+            Write-Host ""
+            Write-Host "========================================="
+            Write-Host "✅ RDP READY!"
+            Write-Host "Connect to: serveo.net:$port"
+            Write-Host "Username: runneradmin"
+            Write-Host "Password: Password123!"
+            Write-Host "========================================="
+            Write-Host ""
+          }
+          
+          # Alternative response format
+          if ($line -match "Forwarding TCP connection from .*:(\d+)") {
+            $port = $Matches[1]
+            Write-Host ""
+            Write-Host "========================================="
+            Write-Host "✅ RDP READY!"
+            Write-Host "Connect to: serveo.net:$port"
+            Write-Host "Username: runneradmin"
+            Write-Host "Password: Password123!"
+            Write-Host "========================================="
+            Write-Host ""
+          }
         }
-        catch {
-          Write-Host "Error getting tunnel info. Check ngrok is running."
-        }
-        
-        # Keep running
-        Wait-Process -Id $ngrok.Id
